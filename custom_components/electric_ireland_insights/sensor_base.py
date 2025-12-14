@@ -49,7 +49,7 @@ class Sensor(PollUpdateMixin, HistoricalSensor, SensorEntity):
         self._attr_device_class = device_class
 
     # Force state_class to None to stop HA from restoring the old forbidden value
-        self._attr_state_class = None  
+        self._attr_state_class = SensorStateClass.TOTAL  
         self._api: ElectricIrelandScraper = ei_api
 
         self._metric = metric
@@ -129,12 +129,14 @@ class Sensor(PollUpdateMixin, HistoricalSensor, SensorEntity):
             min_dt, max_dt = valid_datapoints[0].dt, valid_datapoints[len(valid_datapoints) - 1].dt
             LOGGER.info(f"Found {len(valid_datapoints)} valid datapoints, ranging from {min_dt} to {max_dt}")
 
-        self._attr_historical_states = [d for d in hist_states if d.state]
+                self._attr_historical_states = [d for d in hist_states if d.state]
+
         # FIX: Update the 'Current State' so the entity is not 'Unknown'
         if self._attr_historical_states:
-             # Set state to the most recent value found
+            # Set state to the most recent value found
             self._attr_native_value = self._attr_historical_states[-1].state
             self.async_write_ha_state()
+
 
     @property
     def statistic_id(self) -> str:
