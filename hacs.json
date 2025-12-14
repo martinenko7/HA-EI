@@ -1,5 +1,5 @@
 {
-  "name": "Electric Ireland Insights for Home Assistant",
+  "name": "Electric Ireland Insights(Martin's fork)",
   "country": "IE",
   "zip_release": false,
   "homeassistant": "2024.1.0",

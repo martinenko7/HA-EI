@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, UTC
 from typing import List
 
 from homeassistant.components.recorder.models import StatisticData, StatisticMetaData
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 
 from homeassistant_historical_sensor import (
     HistoricalSensor,
@@ -48,6 +48,7 @@ class Sensor(PollUpdateMixin, HistoricalSensor, SensorEntity):
         # Define whatever you are
         self._attr_native_unit_of_measurement = measurement_unit
         self._attr_device_class = device_class
+        self._attr_state_class = SensorStateClass.TOTAL
 
         self._api: ElectricIrelandScraper = ei_api
         self._metric = metric
