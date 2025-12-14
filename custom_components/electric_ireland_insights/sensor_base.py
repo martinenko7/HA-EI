@@ -44,13 +44,14 @@ class Sensor(PollUpdateMixin, HistoricalSensor, SensorEntity):
 
         self._attr_entity_registry_enabled_default = True
         self._attr_state = None
-
-        # Define whatever you are
+     # Define whatever you are
         self._attr_native_unit_of_measurement = measurement_unit
         self._attr_device_class = device_class
-        self._attr_state_class = SensorStateClass.TOTAL
 
+    # Force state_class to None to stop HA from restoring the old forbidden value
+        self._attr_state_class = None  
         self._api: ElectricIrelandScraper = ei_api
+
         self._metric = metric
 
     async def async_added_to_hass(self) -> None:
