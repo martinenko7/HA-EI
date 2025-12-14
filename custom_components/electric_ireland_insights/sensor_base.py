@@ -129,6 +129,11 @@ class Sensor(PollUpdateMixin, HistoricalSensor, SensorEntity):
             LOGGER.info(f"Found {len(valid_datapoints)} valid datapoints, ranging from {min_dt} to {max_dt}")
 
         self._attr_historical_states = [d for d in hist_states if d.state]
+        # FIX: Update the 'Current State' so the entity is not 'Unknown'
+        if self._attr_historical_states:
+             # Set state to the most recent value found
+            self._attr_native_value = self._attr_historical_states[-1].state
+            self.async_write_ha_state()
 
     @property
     def statistic_id(self) -> str:
