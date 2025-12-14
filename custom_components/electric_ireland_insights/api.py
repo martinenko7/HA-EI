@@ -38,11 +38,11 @@ class ElectricIrelandScraper:
     def __login_and_get_meter_ids(self, session):
         # REQUEST 1: Get the Source token, and initialize the session
         LOGGER.debug("Getting Source Token...")
-        res1 = session.get(f"{BASE_URL}/")
         try:
+            res1 = session.get(f"{BASE_URL}/")
             res1.raise_for_status()
         except RequestException as err:
-            LOGGER.error(f"Failed to Get Source Token: {err}")
+            LOGGER.error(f"Failed to connect to home page: {err}")
             return None
 
         soup1 = BeautifulSoup(res1.text, "html.parser")
@@ -51,69 +51,95 @@ class ElectricIrelandScraper:
         rvt = session.cookies.get_dict().get("rvt")
 
         if not source:
-            LOGGER.error("Could not retrieve Source")
+            LOGGER.error("SCRAPE FAIL: Could not find 'Source' hidden field on login page.")
             return None
         if not rvt:
-            LOGGER.error("Could not find rvt cookie")
+            LOGGER.error("SCRAPE FAIL: Could not find 'rvt' cookie.")
             return None
 
         # REQUEST 2: Perform Login
         LOGGER.debug("Performing Login...")
-        res2 = session.post(
-            f"{BASE_URL}/",
-            data={
-                "LoginFormData.UserName": self.__username,
-                "LoginFormData.Password": self.__password,
-                "rvt": rvt,
-                "Source": source,
-                "PotText": "",
-                "__EiTokPotText": "",
-                "ReturnUrl": "",
-                "AccountNumber": "",
-            },
-        )
         try:
+            res2 = session.post(
+                f"{BASE_URL}/",
+                data={
+                    "LoginFormData.UserName": self.__username,
+                    "LoginFormData.Password": self.__password,
+                    "rvt": rvt,
+                    "Source": source,
+                    "PotText": "",
+                    "__EiTokPotText": "",
+                    "ReturnUrl": "",
+                    "AccountNumber": "",
+                },
+            )
             res2.raise_for_status()
         except RequestException as err:
-            LOGGER.error(f"Failed to Perform Login: {err}")
+            LOGGER.error(f"Login POST request failed: {err}")
             return None
+
+        # --- SPY CODE: Check if we are still on the login page ---
+        if "LoginFormData.UserName" in res2.text or "Log in" in res2.text:
+            LOGGER.error("LOGIN FAILED: The website returned the login page again.")
+            
+            # Try to find the specific error message from the site
+            soup_debug = BeautifulSoup(res2.text, "html.parser")
+            # Look for common error classes used by Electric Ireland
+            error_msg = soup_debug.find(class_="field-validation-error") or \
+                        soup_debug.find(class_="validation-summary-errors")
+            
+            if error_msg:
+                LOGGER.error(f"WEBSITE ERROR MESSAGE: {error_msg.get_text(strip=True)}")
+            else:
+                LOGGER.error("Could not find a specific error message. Check credentials.")
+            return None
+        # -------------
 
         soup2 = BeautifulSoup(res2.text, "html.parser")
         account_divs = soup2.find_all("div", {"class": "my-accounts__item"})
+        
+        # Debug: How many accounts did we find?
+        LOGGER.debug(f"Scraper found {len(account_divs)} accounts on the dashboard.")
+
         target_account = None
         for account_div in account_divs:
             account_number_el = account_div.find("p", {"class": "account-number"})
             if not account_number_el:
                 continue
-            account_number = account_number_el.text
+            
+            account_number = account_number_el.text.strip() # Added strip() just in case
+            
+            # Check if this is the account we want
             if account_number != self.__account_number:
-                LOGGER.debug(f"Skipping account {account_number} as it is not target")
+                LOGGER.debug(f"Skipping account {account_number} (looking for {self.__account_number})")
                 continue
 
             is_elec_divs = account_div.find_all("h2", {"class": "account-electricity-icon"})
             if len(is_elec_divs) != 1:
-                LOGGER.info(f"Found account {account_number} but is not Electricity")
+                LOGGER.info(f"Found account {account_number} but it does not appear to be an Electricity account.")
                 continue
 
             target_account = account_div
             break
 
         if not target_account:
-            LOGGER.warning("Failed to find Target Account; please verify it is the correct one")
+            LOGGER.warning(f"Failed to find Target Account ({self.__account_number}) in the list. Login might have been partial.")
             return None
 
         # REQUEST 3: Navigate to Insights page to get meter IDs
         LOGGER.debug("Navigating to Insights page...")
         event_form = target_account.find("form", {"action": "/Accounts/OnEvent"})
+        
+        if not event_form:
+            LOGGER.error("Failed to find the 'OnEvent' form to click 'View Insights'. HTML structure might have changed.")
+            return None
+
         req3 = {"triggers_event": "AccountSelection.ToInsights"}
         for form_input in event_form.find_all("input"):
             req3[form_input.get("name")] = form_input.get("value")
 
-        res3 = session.post(
-            f"{BASE_URL}/Accounts/OnEvent",
-            data=req3,
-        )
         try:
+            res3 = session.post(f"{BASE_URL}/Accounts/OnEvent", data=req3)
             res3.raise_for_status()
         except RequestException as err:
             LOGGER.error(f"Failed to Navigate to Insights: {err}")
@@ -122,9 +148,9 @@ class ElectricIrelandScraper:
         # Extract meter IDs from #modelData div
         soup3 = BeautifulSoup(res3.text, "html.parser")
         model_data = soup3.find("div", {"id": "modelData"})
-
+        
         if not model_data:
-            LOGGER.error("Failed to find modelData div on Insights page")
+            LOGGER.error("Failed to find 'modelData' div on Insights page. We might be on the wrong page.")
             return None
 
         partner = model_data.get("data-partner")
@@ -135,9 +161,8 @@ class ElectricIrelandScraper:
             LOGGER.error(f"Missing meter IDs: partner={partner}, contract={contract}, premise={premise}")
             return None
 
-        LOGGER.info(f"Found meter IDs: partner={partner}, contract={contract}, premise={premise}")
+        LOGGER.info(f"SUCCESS: Found meter IDs: partner={partner}, contract={contract}, premise={premise}")
         return {"partner": partner, "contract": contract, "premise": premise}
-
 
 class MeterInsightScraper:
     """Scraper for the new Electric Ireland MeterInsight API."""
