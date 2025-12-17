@@ -294,20 +294,38 @@ class MeterInsightScraper:
                 LOGGER.warning(f"Failed to parse date {end_date_str}: {err}")
                 continue
 
-            # Process each tariff bucket separately
+            # Process each tariff bucket
+            # Note: Each hour should only have ONE active tariff, but the API returns all buckets
+            # We need to find which tariff actually has data for this specific hour
             for tariff_key in usage_tariff_keys:
-                # Skip if filtering for specific tariff and this isn't it
-                if tariff_type and tariff_key != tariff_type:
-                    continue
-                    
                 usage_entry = dp.get(tariff_key)
                 
-                if usage_entry is not None:
-                    datapoints.append({
-                        "consumption": usage_entry.get("consumption"),
-                        "cost"       : usage_entry.get("cost"),
-                        "intervalEnd": interval_end,
-                        "tariff"     : tariff_key,
-                    })
+                # Skip null/empty entries
+                if usage_entry is None:
+                    continue
+                
+                consumption = usage_entry.get("consumption")
+                cost = usage_entry.get("cost")
+                
+                # Skip if both consumption and cost are None or 0
+                if consumption in (None, 0) and cost in (None, 0):
+                    continue
+                
+                # If filtering for specific tariff, only include if it matches
+                if tariff_type and tariff_key != tariff_type:
+                    continue
+                
+                # Add this tariff's data
+                datapoints.append({
+                    "consumption": consumption,
+                    "cost"       : cost,
+                    "intervalEnd": interval_end,
+                    "tariff"     : tariff_key,
+                })
+                
+                # IMPORTANT: Only take the FIRST non-zero tariff for each hour
+                # This prevents double-counting when multiple tariff buckets have data
+                if not tariff_type:  # Only break if we're not filtering
+                    break
 
         return datapoints
