@@ -46,12 +46,10 @@ class Sensor(PollUpdateMixin, HistoricalSensor, SensorEntity):
 
         self._attr_entity_registry_enabled_default = True
         self._attr_state = None
-     # Define whatever you are
         self._attr_native_unit_of_measurement = measurement_unit
         self._attr_device_class = device_class
-
-    # Force state_class to None to stop HA from restoring the old forbidden value
-        self._attr_state_class = SensorStateClass.TOTAL  
+        # Note: state_class is NOT set - historical sensors don't support it
+        
         self._api: ElectricIrelandScraper = ei_api
 
         self._metric = metric
@@ -193,7 +191,14 @@ class Sensor(PollUpdateMixin, HistoricalSensor, SensorEntity):
         meta = super().get_statistic_metadata()
         meta["has_sum"] = True
         meta["has_mean"] = True
-        meta["mean_type"] = "arithmetic"  # Use arithmetic mean for energy/cost averaging
+        # Note: mean_type is intentionally not set - for cumulative data (energy/cost),
+        # Home Assistant will calculate the mean from the sum values automatically
+        
+        # Set unit_class based on device_class for proper statistics handling
+        if self._attr_device_class == SensorDeviceClass.ENERGY:
+            meta["unit_class"] = "energy"
+        elif self._attr_device_class == SensorDeviceClass.MONETARY:
+            meta["unit_class"] = "monetary"
 
         return meta
 
