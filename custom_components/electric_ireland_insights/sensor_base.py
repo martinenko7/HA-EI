@@ -48,7 +48,10 @@ class Sensor(PollUpdateMixin, HistoricalSensor, SensorEntity):
         self._attr_state = None
         self._attr_native_unit_of_measurement = measurement_unit
         self._attr_device_class = device_class
-        # Note: state_class is NOT set - historical sensors don't support it
+        
+        # Set state_class for Energy Dashboard compatibility
+        # Historical sensors calculate their own statistics, but Energy Dashboard checks for this
+        self._attr_state_class = SensorStateClass.TOTAL_INCREASING
         
         self._api: ElectricIrelandScraper = ei_api
 
@@ -175,7 +178,11 @@ class Sensor(PollUpdateMixin, HistoricalSensor, SensorEntity):
         if self._attr_historical_states:
             # Set state to the most recent value found
             self._attr_native_value = self._attr_historical_states[-1].state
-            self.async_write_ha_state()
+        else:
+            # Set to 0 if no data yet (prevents "unknown" state in Energy Dashboard)
+            self._attr_native_value = 0
+            
+        self.async_write_ha_state()
 
 
     @property
