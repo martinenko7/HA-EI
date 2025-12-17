@@ -307,6 +307,10 @@ class MeterInsightScraper:
                 consumption = usage_entry.get("consumption")
                 cost = usage_entry.get("cost")
                 
+                # Debug logging for cost issues
+                if tariff_type and consumption not in (None, 0):
+                    LOGGER.debug(f"Tariff {tariff_key}: consumption={consumption}, cost={cost}, filtering for={tariff_type}")
+                
                 # Skip if both consumption and cost are None or 0
                 if consumption in (None, 0) and cost in (None, 0):
                     continue
