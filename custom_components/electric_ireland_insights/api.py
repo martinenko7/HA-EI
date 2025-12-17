@@ -1,9 +1,12 @@
 import logging
+import time
 from datetime import datetime
 
 import requests
 from bs4 import BeautifulSoup
 from requests import RequestException
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from .const import DOMAIN
 
@@ -11,6 +14,42 @@ from .const import DOMAIN
 LOGGER = logging.getLogger(DOMAIN)
 
 BASE_URL = "https://youraccountonline.electricireland.ie"
+
+# Request timeout in seconds (connect, read)
+REQUEST_TIMEOUT = (10, 30)
+
+# Browser-like headers to avoid being blocked
+DEFAULT_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    "DNT": "1",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+}
+
+
+def create_session_with_retries():
+    """Create a requests session with retry logic and proper configuration."""
+    session = requests.Session()
+    
+    # Configure retry strategy
+    retry_strategy = Retry(
+        total=3,  # Total number of retries
+        backoff_factor=1,  # Wait 1s, 2s, 4s between retries
+        status_forcelist=[429, 500, 502, 503, 504],  # Retry on these HTTP status codes
+        allowed_methods=["HEAD", "GET", "POST", "PUT", "DELETE", "OPTIONS", "TRACE"],
+    )
+    
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    
+    # Set default headers
+    session.headers.update(DEFAULT_HEADERS)
+    
+    return session
 
 
 class ElectricIrelandScraper:
@@ -23,7 +62,7 @@ class ElectricIrelandScraper:
 
     def refresh_credentials(self):
         LOGGER.info("Trying to refresh credentials...")
-        session = requests.Session()
+        session = create_session_with_retries()
 
         meter_ids = self.__login_and_get_meter_ids(session)
         if not meter_ids:
@@ -39,10 +78,11 @@ class ElectricIrelandScraper:
         # REQUEST 1: Get the Source token, and initialize the session
         LOGGER.debug("Getting Source Token...")
         try:
-            res1 = session.get(f"{BASE_URL}/")
+            res1 = session.get(f"{BASE_URL}/", timeout=REQUEST_TIMEOUT)
             res1.raise_for_status()
         except RequestException as err:
             LOGGER.error(f"Failed to connect to home page: {err}")
+            LOGGER.debug(f"Full error details: {type(err).__name__}: {err}")
             return None
 
         soup1 = BeautifulSoup(res1.text, "html.parser")
@@ -59,6 +99,10 @@ class ElectricIrelandScraper:
 
         # REQUEST 2: Perform Login
         LOGGER.debug("Performing Login...")
+        
+        # Add a small delay to avoid being flagged as a bot
+        time.sleep(0.5)
+        
         try:
             res2 = session.post(
                 f"{BASE_URL}/",
@@ -72,10 +116,21 @@ class ElectricIrelandScraper:
                     "ReturnUrl": "",
                     "AccountNumber": "",
                 },
+                timeout=REQUEST_TIMEOUT,
+                allow_redirects=True,
             )
             res2.raise_for_status()
+        except requests.exceptions.Timeout as err:
+            LOGGER.error(f"Login POST request timed out: {err}")
+            LOGGER.info("The Electric Ireland website may be slow. Try again later.")
+            return None
+        except requests.exceptions.ConnectionError as err:
+            LOGGER.error(f"Connection error during login: {err}")
+            LOGGER.info("Check your network connection or the Electric Ireland website may be down.")
+            return None
         except RequestException as err:
             LOGGER.error(f"Login POST request failed: {err}")
+            LOGGER.debug(f"Full error details: {type(err).__name__}: {err}")
             return None
 
         # --- SPY CODE: Check if we are still on the login page ---
@@ -139,10 +194,11 @@ class ElectricIrelandScraper:
             req3[form_input.get("name")] = form_input.get("value")
 
         try:
-            res3 = session.post(f"{BASE_URL}/Accounts/OnEvent", data=req3)
+            res3 = session.post(f"{BASE_URL}/Accounts/OnEvent", data=req3, timeout=REQUEST_TIMEOUT)
             res3.raise_for_status()
         except RequestException as err:
             LOGGER.error(f"Failed to Navigate to Insights: {err}")
+            LOGGER.debug(f"Full error details: {type(err).__name__}: {err}")
             return None
 
         # Extract meter IDs from #modelData div
@@ -173,26 +229,29 @@ class MeterInsightScraper:
         self.__contract = meter_ids["contract"]
         self.__premise = meter_ids["premise"]
 
-    def get_data(self, target_date, is_granular=False):
+    def get_data(self, target_date, tariff_type=None):
         """Fetch hourly usage data for a specific date.
 
         Args:
             target_date: The date to fetch data for
-            is_granular: Ignored (kept for API compatibility)
+            tariff_type: Optional - specific tariff to filter (flatRate, offPeak, midPeak, onPeak)
+                        If None, returns data for all available tariffs
 
         Returns:
-            List of datapoints with 'consumption', 'cost', and 'intervalEnd' keys
+            List of datapoints with 'consumption', 'cost', 'intervalEnd', and 'tariff' keys
         """
         date_str = target_date.strftime("%Y-%m-%d")
-        LOGGER.debug(f"Getting hourly data for {date_str}...")
+        tariff_filter = f" (tariff: {tariff_type})" if tariff_type else " (all tariffs)"
+        LOGGER.debug(f"Getting hourly data for {date_str}{tariff_filter}...")
 
         url = f"{BASE_URL}/MeterInsight/{self.__partner}/{self.__contract}/{self.__premise}/hourly-usage"
 
         try:
-            response = self.__session.get(url, params={"date": date_str})
+            response = self.__session.get(url, params={"date": date_str}, timeout=REQUEST_TIMEOUT)
             response.raise_for_status()
         except RequestException as err:
-            LOGGER.error(f"Failed to get hourly usage data: {err}")
+            LOGGER.error(f"Failed to get hourly usage data for {date_str}: {err}")
+            LOGGER.debug(f"Full error details: {type(err).__name__}: {err}")
             return []
 
         # Check if we got JSON or an error page
@@ -214,7 +273,7 @@ class MeterInsightScraper:
         raw_datapoints = data.get("data", [])
         LOGGER.debug(f"Found {len(raw_datapoints)} hourly datapoints for {date_str}")
 
-        # Transform to expected format with 'consumption', 'cost', 'intervalEnd'
+        # Transform to expected format with 'consumption', 'cost', 'intervalEnd', and 'tariff'
         datapoints = []
 
         # Tariff buckets as seen in response on Smart TOU plan
@@ -235,17 +294,20 @@ class MeterInsightScraper:
                 LOGGER.warning(f"Failed to parse date {end_date_str}: {err}")
                 continue
 
-            # Pick the first non‑null tariff bucket
-            usage_entry = next(
-                (dp[key] for key in usage_tariff_keys if dp.get(key) is not None),
-                None
-            )
-
-            if usage_entry is not None:
-                datapoints.append({
-                    "consumption": usage_entry.get("consumption"),
-                    "cost"       : usage_entry.get("cost"),
-                    "intervalEnd": interval_end,
-                })
+            # Process each tariff bucket separately
+            for tariff_key in usage_tariff_keys:
+                # Skip if filtering for specific tariff and this isn't it
+                if tariff_type and tariff_key != tariff_type:
+                    continue
+                    
+                usage_entry = dp.get(tariff_key)
+                
+                if usage_entry is not None:
+                    datapoints.append({
+                        "consumption": usage_entry.get("consumption"),
+                        "cost"       : usage_entry.get("cost"),
+                        "intervalEnd": interval_end,
+                        "tariff"     : tariff_key,
+                    })
 
         return datapoints

@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, UTC
 from typing import List
 
 from homeassistant.components.recorder.models import StatisticData, StatisticMetaData
+from homeassistant.components.recorder.statistics import STATISTIC_MEAN_TYPE_ARITHMETIC
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 
 from homeassistant_historical_sensor import (
@@ -33,14 +34,16 @@ class Sensor(PollUpdateMixin, HistoricalSensor, SensorEntity):
     #
 
     def __init__(self, device_id: str, ei_api: ElectricIrelandScraper, name: str, metric: str, measurement_unit: str,
-                 device_class: SensorDeviceClass):
+                 device_class: SensorDeviceClass, tariff_type: str = None):
         super().__init__()
 
         self._attr_has_entity_name = True
         self._attr_name = f"Electric Ireland {name}"
 
-        self._attr_unique_id = f"{DOMAIN}_{metric}_{device_id}"
-        self._attr_entity_id = f"{DOMAIN}_{metric}_{device_id}"
+        # Include tariff type in unique_id if specified
+        tariff_suffix = f"_{tariff_type}" if tariff_type else ""
+        self._attr_unique_id = f"{DOMAIN}_{metric}{tariff_suffix}_{device_id}"
+        self._attr_entity_id = f"{DOMAIN}_{metric}{tariff_suffix}_{device_id}"
 
         self._attr_entity_registry_enabled_default = True
         self._attr_state = None
@@ -53,6 +56,8 @@ class Sensor(PollUpdateMixin, HistoricalSensor, SensorEntity):
         self._api: ElectricIrelandScraper = ei_api
 
         self._metric = metric
+        self._tariff_type = tariff_type
+        self._last_data_timestamp = None  # Track last successful data retrieval
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
@@ -66,7 +71,13 @@ class Sensor(PollUpdateMixin, HistoricalSensor, SensorEntity):
 
         loop = asyncio.get_running_loop()
 
-        await loop.run_in_executor(None, self._api.refresh_credentials)
+        try:
+            await loop.run_in_executor(None, self._api.refresh_credentials)
+        except Exception as err:
+            LOGGER.error(f"Failed to refresh credentials: {err}")
+            LOGGER.debug(f"Full error details: {type(err).__name__}: {err}", exc_info=True)
+            return
+
         scraper = self._api.scraper
 
         if not scraper:
@@ -85,22 +96,30 @@ class Sensor(PollUpdateMixin, HistoricalSensor, SensorEntity):
             current_date = yesterday - timedelta(days=LOOKUP_DAYS)
             while current_date <= yesterday:
                 LOGGER.debug(f"Submitting {current_date}")
-                results = loop.run_in_executor(executor, scraper.get_data, current_date)
-                executor_results.append(results)
+                try:
+                    # Pass tariff_type to get_data
+                    results = loop.run_in_executor(executor, scraper.get_data, current_date, self._tariff_type)
+                    executor_results.append(results)
+                except Exception as err:
+                    LOGGER.warning(f"Failed to submit job for {current_date}: {err}")
                 current_date += timedelta(days=1)
 
         LOGGER.info("Finished launching jobs")
 
         # For every launched job
         for executor_result in executor_results:
-            # And now we parse the datapoints
-            for datapoint in await executor_result:
-                state = datapoint.get(self._metric)
-                dt = datetime.fromtimestamp(datapoint.get("intervalEnd"), tz=UTC)
-                hist_states.append(HistoricalState(
-                    state=state,
-                    dt=dt,
-                ))
+            try:
+                # And now we parse the datapoints
+                for datapoint in await executor_result:
+                    state = datapoint.get(self._metric)
+                    dt = datetime.fromtimestamp(datapoint.get("intervalEnd"), tz=UTC)
+                    hist_states.append(HistoricalState(
+                        state=state,
+                        dt=dt,
+                    ))
+            except Exception as err:
+                LOGGER.warning(f"Failed to process executor result: {err}")
+                continue
 
         hist_states.sort(key=lambda d: d.dt)
 
@@ -118,16 +137,40 @@ class Sensor(PollUpdateMixin, HistoricalSensor, SensorEntity):
 
         if null_datapoints:
             min_dt, max_dt = null_datapoints[0].dt, null_datapoints[len(null_datapoints) - 1].dt
-            LOGGER.info(f"Found {len(null_datapoints)} null datapoints, ranging from {min_dt} to {max_dt}")
+            LOGGER.debug(f"Found {len(null_datapoints)} null datapoints for {self._attr_name}, ranging from {min_dt} to {max_dt}. This is normal for recent time periods.")
 
         if invalid_datapoints:
-            LOGGER.warning(f"Found {len(invalid_datapoints)} invalid datapoints!")
+            LOGGER.info(f"Found {len(invalid_datapoints)} invalid datapoints for {self._attr_name}. These will be skipped.")
 
         if not valid_datapoints:
-            LOGGER.error("Found no valid datapoints!")
+            # Check if we have recent data from a previous pull
+            data_age_hours = None
+            if self._last_data_timestamp:
+                data_age = now - self._last_data_timestamp
+                data_age_hours = data_age.total_seconds() / 3600
+            
+            # Only log error if data is stale (>48 hours old) or never retrieved
+            if data_age_hours is None:
+                LOGGER.warning(f"No valid datapoints found on first attempt for {self._attr_name}. This is normal - Electric Ireland data has 1-3 day delay.")
+            elif data_age_hours > 48:
+                LOGGER.error(f"No valid datapoints found for {self._attr_name}! Last successful data was {data_age_hours:.1f} hours ago. Check credentials or Electric Ireland website.")
+            else:
+                LOGGER.debug(f"No new datapoints for {self._attr_name}. Last data was {data_age_hours:.1f} hours ago (within expected 1-3 day delay).")
         else:
             min_dt, max_dt = valid_datapoints[0].dt, valid_datapoints[len(valid_datapoints) - 1].dt
-            LOGGER.info(f"Found {len(valid_datapoints)} valid datapoints, ranging from {min_dt} to {max_dt}")
+            
+            # Calculate how recent the data is
+            data_age = now - max_dt
+            data_age_hours = data_age.total_seconds() / 3600
+            
+            # Update last successful data timestamp
+            self._last_data_timestamp = max_dt
+            
+            # Log with appropriate level based on data freshness
+            if data_age_hours > 72:  # More than 3 days old
+                LOGGER.warning(f"Found {len(valid_datapoints)} valid datapoints for {self._attr_name}, ranging from {min_dt} to {max_dt}. Latest data is {data_age_hours:.1f} hours old (older than typical 1-3 day delay).")
+            else:
+                LOGGER.info(f"Found {len(valid_datapoints)} valid datapoints for {self._attr_name}, ranging from {min_dt} to {max_dt}. Latest data is {data_age_hours:.1f} hours old.")
 
             self._attr_historical_states = [d for d in hist_states if d.state]
 
@@ -151,6 +194,7 @@ class Sensor(PollUpdateMixin, HistoricalSensor, SensorEntity):
         meta = super().get_statistic_metadata()
         meta["has_sum"] = True
         meta["has_mean"] = True
+        meta["mean_type"] = STATISTIC_MEAN_TYPE_ARITHMETIC
 
         return meta
 
