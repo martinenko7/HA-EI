@@ -197,8 +197,8 @@ class Sensor(PollUpdateMixin, HistoricalSensor, SensorEntity):
         # Set unit_class based on device_class for proper statistics handling
         if self._attr_device_class == SensorDeviceClass.ENERGY:
             meta["unit_class"] = "energy"
-        elif self._attr_device_class == SensorDeviceClass.MONETARY:
-            meta["unit_class"] = "monetary"
+        # For monetary sensors, don't set unit_class - let it be inferred from unit_of_measurement
+        # This allows EUR/USD/etc to work properly
 
         return meta
 
