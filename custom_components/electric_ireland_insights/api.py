@@ -295,8 +295,16 @@ class MeterInsightScraper:
                 continue
 
             # Process each tariff bucket
-            # Note: Each hour should only have ONE active tariff, but the API returns all buckets
-            # We need to find which tariff actually has data for this specific hour
+            # The API may return data in multiple tariff buckets for the same hour
+            # We need to find which tariff bucket has the PRIMARY/active data
+            
+            # Strategy: When NOT filtering, take only the LAST non-zero tariff in the priority order
+            # This handles cases where multiple tariffs report the same consumption
+            # Priority order: flatRate > offPeak > midPeak > onPeak (most specific last)
+            
+            active_tariff_data = None
+            active_tariff_key = None
+            
             for tariff_key in usage_tariff_keys:
                 usage_entry = dp.get(tariff_key)
                 
@@ -307,29 +315,33 @@ class MeterInsightScraper:
                 consumption = usage_entry.get("consumption")
                 cost = usage_entry.get("cost")
                 
-                # Debug logging for cost issues
-                if tariff_type and consumption not in (None, 0):
-                    LOGGER.debug(f"Tariff {tariff_key}: consumption={consumption}, cost={cost}, filtering for={tariff_type}")
-                
                 # Skip if both consumption and cost are None or 0
                 if consumption in (None, 0) and cost in (None, 0):
                     continue
                 
-                # If filtering for specific tariff, only include if it matches
-                if tariff_type and tariff_key != tariff_type:
-                    continue
-                
-                # Add this tariff's data
-                datapoints.append({
-                    "consumption": consumption,
-                    "cost"       : cost,
-                    "intervalEnd": interval_end,
-                    "tariff"     : tariff_key,
-                })
-                
-                # IMPORTANT: Only take the FIRST non-zero tariff for each hour
-                # This prevents double-counting when multiple tariff buckets have data
-                if not tariff_type:  # Only break if we're not filtering
-                    break
+                # If filtering for specific tariff, only process if it matches
+                if tariff_type:
+                    if tariff_key == tariff_type:
+                        # Found our filtered tariff, add it
+                        datapoints.append({
+                            "consumption": consumption,
+                            "cost"       : cost,
+                            "intervalEnd": interval_end,
+                            "tariff"     : tariff_key,
+                        })
+                        break  # Only one match possible when filtering
+                else:
+                    # Not filtering - keep track of the last valid tariff (highest priority)
+                    active_tariff_data = {
+                        "consumption": consumption,
+                        "cost"       : cost,
+                        "intervalEnd": interval_end,
+                        "tariff"     : tariff_key,
+                    }
+                    active_tariff_key = tariff_key
+            
+            # Add the active tariff data when not filtering
+            if not tariff_type and active_tariff_data:
+                datapoints.append(active_tariff_data)
 
         return datapoints
