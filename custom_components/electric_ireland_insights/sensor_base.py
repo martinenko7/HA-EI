@@ -7,7 +7,6 @@ from datetime import datetime, timedelta, UTC
 from typing import List
 
 from homeassistant.components.recorder.models import StatisticData, StatisticMetaData
-from homeassistant.components.recorder.statistics import STATISTIC_MEAN_TYPE_ARITHMETIC
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 
 from homeassistant_historical_sensor import (
@@ -194,7 +193,7 @@ class Sensor(PollUpdateMixin, HistoricalSensor, SensorEntity):
         meta = super().get_statistic_metadata()
         meta["has_sum"] = True
         meta["has_mean"] = True
-        meta["mean_type"] = STATISTIC_MEAN_TYPE_ARITHMETIC
+        meta["mean_type"] = "arithmetic"  # Use arithmetic mean for energy/cost averaging
 
         return meta
 
