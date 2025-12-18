@@ -48,9 +48,8 @@ class Sensor(PollUpdateMixin, HistoricalSensor, SensorEntity):
         self._attr_state = None
         self._attr_native_unit_of_measurement = measurement_unit
         self._attr_device_class = device_class
-        # Set state_class for Energy Dashboard compatibility
-        # Even though HistoricalSensor manages statistics, Energy component needs this
-        self._attr_state_class = SensorStateClass.TOTAL
+        # NOTE: state_class is intentionally NOT set
+        # HistoricalSensor manages statistics internally and state_class will break them
         
         self._api: ElectricIrelandScraper = ei_api
 
