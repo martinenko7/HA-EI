@@ -112,10 +112,6 @@ class Sensor(PollUpdateMixin, HistoricalSensor, SensorEntity):
                     state = datapoint.get(self._metric)
                     dt = datetime.fromtimestamp(datapoint.get("intervalEnd"), tz=UTC)
                     
-                    # Debug: Log what we're extracting for cost sensors
-                    if self._metric == "cost" and self._tariff_type and state is not None:
-                        LOGGER.warning(f"COST EXTRACT [{self._tariff_type}]: datapoint={datapoint}, extracted cost={state}")
-                    
                     hist_states.append(HistoricalState(
                         state=state,
                         dt=dt,
