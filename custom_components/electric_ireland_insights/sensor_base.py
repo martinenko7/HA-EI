@@ -197,8 +197,9 @@ class Sensor(PollUpdateMixin, HistoricalSensor, SensorEntity):
         meta = super().get_statistic_metadata()
         meta["has_sum"] = True
         meta["has_mean"] = True
-        # For cumulative data (energy/cost), use arithmetic mean
-        meta["mean_type"] = "arithmetic"
+        # Note: mean_type is NOT set for TOTAL state_class sensors
+        # HistoricalSensor handles statistics internally, and Home Assistant
+        # will calculate mean from the imported sum values automatically
         
         # Set unit_class based on device_class for proper statistics handling
         if self._attr_device_class == SensorDeviceClass.ENERGY:
