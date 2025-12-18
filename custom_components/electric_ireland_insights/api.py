@@ -272,6 +272,15 @@ class MeterInsightScraper:
 
         raw_datapoints = data.get("data", [])
         LOGGER.debug(f"Found {len(raw_datapoints)} hourly datapoints for {date_str}")
+        
+        # Log sample API data to understand structure (only for one tariff to avoid spam)
+        if raw_datapoints and tariff_type == "midPeak":
+            sample = raw_datapoints[0]
+            LOGGER.warning(f"SAMPLE API DATA for midPeak filter: Full structure: {sample}")
+            # Show what each tariff bucket contains
+            for tariff_key in ("flatRate", "offPeak", "midPeak", "onPeak"):
+                if tariff_key in sample:
+                    LOGGER.warning(f"  {tariff_key} bucket: {sample[tariff_key]}")
 
         # Transform to expected format with 'consumption', 'cost', 'intervalEnd', and 'tariff'
         datapoints = []

@@ -48,8 +48,9 @@ class Sensor(PollUpdateMixin, HistoricalSensor, SensorEntity):
         self._attr_state = None
         self._attr_native_unit_of_measurement = measurement_unit
         self._attr_device_class = device_class
-        # NOTE: state_class is intentionally NOT set
-        # Historical sensors manage their own statistics and state_class will break them
+        # Set state_class for Energy Dashboard compatibility
+        # Even though HistoricalSensor manages statistics, Energy component needs this
+        self._attr_state_class = SensorStateClass.TOTAL
         
         self._api: ElectricIrelandScraper = ei_api
 
@@ -196,8 +197,8 @@ class Sensor(PollUpdateMixin, HistoricalSensor, SensorEntity):
         meta = super().get_statistic_metadata()
         meta["has_sum"] = True
         meta["has_mean"] = True
-        # Note: mean_type is intentionally not set - for cumulative data (energy/cost),
-        # Home Assistant will calculate the mean from the sum values automatically
+        # For cumulative data (energy/cost), use arithmetic mean
+        meta["mean_type"] = "arithmetic"
         
         # Set unit_class based on device_class for proper statistics handling
         if self._attr_device_class == SensorDeviceClass.ENERGY:
