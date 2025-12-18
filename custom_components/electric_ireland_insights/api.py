@@ -272,25 +272,6 @@ class MeterInsightScraper:
 
         raw_datapoints = data.get("data", [])
         LOGGER.debug(f"Found {len(raw_datapoints)} hourly datapoints for {date_str}")
-        
-        # Log sample API data from different tariff hours to understand structure
-        # Only log for midPeak filter to avoid spam
-        if raw_datapoints and tariff_type == "midPeak":
-            # Target specific hours: 09 (midPeak), 12 (midPeak), 17 (onPeak) to see all tariff types
-            target_hours = {9, 12, 17}
-            for dp in raw_datapoints:
-                if not target_hours:  # Stop when we've logged all target hours
-                    break
-                end_str = dp.get("endDate", "")
-                if end_str:
-                    # Extract hour from endDate like "2025-12-13T08:59:59Z"
-                    try:
-                        hour = int(end_str[11:13])
-                        if hour in target_hours:
-                            LOGGER.warning(f"SAMPLE hour {hour:02d}: {dp}")
-                            target_hours.remove(hour)  # Don't log same hour twice
-                    except:
-                        pass
 
         # Transform to expected format with 'consumption', 'cost', 'intervalEnd', and 'tariff'
         datapoints = []
