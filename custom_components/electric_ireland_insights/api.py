@@ -278,9 +278,8 @@ class MeterInsightScraper:
         if raw_datapoints and tariff_type == "midPeak":
             # Target specific hours: 09 (midPeak), 12 (midPeak), 17 (onPeak) to see all tariff types
             target_hours = {9, 12, 17}
-            samples_logged = 0
             for dp in raw_datapoints:
-                if samples_logged >= 3:
+                if not target_hours:  # Stop when we've logged all target hours
                     break
                 end_str = dp.get("endDate", "")
                 if end_str:
@@ -288,7 +287,6 @@ class MeterInsightScraper:
                     try:
                         hour = int(end_str[11:13])
                         if hour in target_hours:
-                            samples_logged += 1
                             LOGGER.warning(f"SAMPLE hour {hour:02d}: {dp}")
                             target_hours.remove(hour)  # Don't log same hour twice
                     except:
