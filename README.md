@@ -1,17 +1,19 @@
-# Home Assistant Electric Ireland Integration
+# Home Assistant Electric Ireland Integration for Smart Tariff Plans
 
-[![Open Integration](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=barreeeiroo&repository=Home-Assistant-Electric-Ireland&category=integration)
+[![GitHub issues](https://img.shields.io/github/issues/martinenko7/HA-EI)](https://github.com/martinenko7/HA-EI/issues)
+[![GitHub](https://img.shields.io/github/license/martinenko7/HA-EI)](https://github.com/martinenko7/HA-EI/blob/main/LICENSE.txt)
 
-Home Assistant integration with **Electric Ireland insights**.
+Home Assistant integration with **Electric Ireland Insights** for Smart TOU (Time of Use) tariffs.
 
-It is capable of:
+## Features
 
-* Reporting **consumed energy** in kWh.
-* Reporting **usage cost** in EUR (see the FAQ below for more details on this).
+* 📊 **Total Energy Consumption & Cost**: Overall electricity usage and cost across all tariff periods
+* 🌙 **Night Rate (Off-Peak)**: Consumption and cost for 23:00-08:00 period at reduced rate
+* ☀️ **Day Rate (Mid-Peak)**: Consumption and cost for 08:00-17:00 and 19:00-23:00 at standard rate
+* ⚡ **Peak Rate (On-Peak)**: Consumption and cost for 17:00-19:00 at premium rate
+* 📈 **Energy Dashboard Integration**: All sensors automatically feed into Home Assistant's Energy Dashboard with historical statistics
+* 🕐 **Hourly Data**: Consumption reported in 1-hour intervals with accurate tariff classification
 
-It will also aggregate the report data into statistical buckets, so they can be fed into the Energy Dashboard.
-
-![](https://i.imgur.com/6ew3JIf.png)
 
 ## FAQs
 
@@ -50,9 +52,21 @@ into the wrong hour. If you take the previous and after, the total should be the
 
 ### Sensors
 
-* **Electric Ireland Consumption**: reports consumed data in kWh, in 30 minute intervals.
-* **Electric Ireland Cost**: reports the total cost charged in 60 minute intervals (without discounts and without
-  standing charge, just the gross "usage" as per the contracted tariff).
+This integration creates 8 sensors:
+
+#### Total Sensors (All Tariffs Combined)
+* **Electric Ireland Consumption**: Total energy consumption in kWh
+* **Electric Ireland Cost**: Total cost in EUR
+
+#### Tariff-Specific Sensors (Time of Use)
+* **Electric Ireland Consumption Night Rate**: kWh consumed during off-peak hours (23:00-08:00)
+* **Electric Ireland Cost Night Rate**: Cost in EUR for off-peak usage
+* **Electric Ireland Consumption Day Rate**: kWh consumed during mid-peak hours (08:00-17:00, 19:00-23:00)
+* **Electric Ireland Cost Day Rate**: Cost in EUR for mid-peak usage
+* **Electric Ireland Consumption Peak Rate**: kWh consumed during on-peak hours (17:00-19:00)
+* **Electric Ireland Cost Peak Rate**: Cost in EUR for on-peak usage
+
+**Note**: Cost values are gross usage costs with VAT included, but **without** the 30% Direct Debit discount, standing charges, or PSO levy.
 
 ### Data Retrieval Flow
 
@@ -71,15 +85,46 @@ into the wrong hour. If you take the previous and after, the total should be the
 
 Every hour:
 
-* Performs once the flow mentioned above to get the API credentials.
-* Launches requests for the 11th to 1st days before "now": if today is 20th January, then it will retrieve data
-  for all days between the 9th and 19th.
-* For Cost, it will receive 24 datapoints within the date.
-* For Consumption, it will receive 48 datapoints within the date.
-* It will ingest the data taking the last minute of the interval: if querying for 00:00 to 00:30, it will ingest it
-  effective at 00:29.
+* Authenticates with Electric Ireland and retrieves API credentials
+* Fetches data for the last 30 days in parallel batches (5 days at a time for efficiency)
+* Each day returns hourly datapoints with consumption and cost values
+* Datapoints are classified by tariff type based on time of day:
+  - **23:00-08:00** → Off-Peak (Night Rate)
+  - **17:00-19:00** → On-Peak (Peak Rate)
+  - **08:00-17:00 & 19:00-23:00** → Mid-Peak (Day Rate)
+* Historical statistics are imported and immediately available in the Energy Dashboard
+## Installation
+
+### HACS (Recommended)
+
+1. Open HACS in Home Assistant
+2. Go to "Integrations"
+3. Click the three dots in the top right corner
+4. Select "Custom repositories"
+5. Add `https://github.com/martinenko7/HA-EI` as an Integration
+6. Click "Install"
+7. Restart Home Assistant
+
+### Manual Installation
+
+1. Copy the `custom_components/electric_ireland_insights` folder to your Home Assistant `config/custom_components/` directory
+2. Restart Home Assistant
+
+### Configuration
+
+1. Go to **Settings** → **Devices & Services**
+2. Click **Add Integration**
+3. Search for "Electric Ireland Insights"
+4. Enter your Electric Ireland username, password, and account number
+5. The sensors will appear and start collecting historical data
+
+## Support
+
+For issues, feature requests, or questions, please visit:
+- **GitHub Issues**: [https://github.com/martinenko7/HA-EI/issues](https://github.com/martinenko7/HA-EI/issues)
+- **GitHub Repository**: [https://github.com/martinenko7/HA-EI](https://github.com/martinenko7/HA-EI)
 
 ## Acknowledgements
 
-* [Historical sensors for Home Assistant](https://github.com/ldotlopez/ha-historical-sensor): provided the library and 
-  skeleton to create the bare minimum working version.
+* [Historical sensors for Home Assistant](https://github.com/ldotlopez/ha-historical-sensor): Provides the library for importing historical statistics
+* Original integration by [barreeeiroo](https://github.com/barreeeiroo/Home-Assistant-Electric-Ireland)ub.com/ldotlopez/ha-historical-sensor)

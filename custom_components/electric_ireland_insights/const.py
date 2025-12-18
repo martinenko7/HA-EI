@@ -1,8 +1,11 @@
 DOMAIN = "electric_ireland_insights"
 NAME = "Electric Ireland Insights"
 
-LOOKUP_DAYS = 30
-PARALLEL_DAYS = 5
+# Data fetching configuration
+LOOKUP_DAYS = 30  # Initial historical data to fetch on first run
+ONGOING_LOOKUP_DAYS = 3  # Only check last 3 days on subsequent updates (Electric Ireland has 1-3 day delay)
+PARALLEL_DAYS = 5  # Number of days to fetch in parallel
+MIN_UPDATE_INTERVAL_HOURS = 6  # Minimum hours between full data fetches to avoid rate limiting
 
 # Tariff types from Electric Ireland API
 TARIFF_FLAT_RATE = "flatRate"

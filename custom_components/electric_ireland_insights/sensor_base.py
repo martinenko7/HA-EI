@@ -16,7 +16,7 @@ from homeassistant_historical_sensor import (
 )
 
 from .api import ElectricIrelandScraper
-from .const import DOMAIN, LOOKUP_DAYS, PARALLEL_DAYS
+from .const import DOMAIN, LOOKUP_DAYS, ONGOING_LOOKUP_DAYS, PARALLEL_DAYS, MIN_UPDATE_INTERVAL_HOURS
 
 
 LOGGER = logging.getLogger(DOMAIN)
@@ -56,6 +56,8 @@ class Sensor(PollUpdateMixin, HistoricalSensor, SensorEntity):
         self._metric = metric
         self._tariff_type = tariff_type
         self._last_data_timestamp = None  # Track last successful data retrieval
+        self._last_update_time = None  # Track last API fetch to prevent excessive requests
+        self._initial_fetch_done = False  # Flag to track if initial historical data has been fetched
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
@@ -66,6 +68,15 @@ class Sensor(PollUpdateMixin, HistoricalSensor, SensorEntity):
         # HomeAssistant core
         #
         # Important: You must provide datetime with tzinfo
+
+        now = datetime.now(UTC)
+        
+        # Smart update logic: Skip if updated recently (unless first run)
+        if self._last_update_time and self._initial_fetch_done:
+            hours_since_update = (now - self._last_update_time).total_seconds() / 3600
+            if hours_since_update < MIN_UPDATE_INTERVAL_HOURS:
+                LOGGER.debug(f"Skipping update for {self._attr_name}: only {hours_since_update:.1f} hours since last update (min {MIN_UPDATE_INTERVAL_HOURS}h)")
+                return
 
         loop = asyncio.get_running_loop()
 
@@ -84,14 +95,21 @@ class Sensor(PollUpdateMixin, HistoricalSensor, SensorEntity):
 
         hist_states: List[HistoricalState] = []
 
-        now = datetime.now(UTC)
         # Build a datetime for "yesterday" since data is never published on the same day
         yesterday = datetime(year=now.year, month=now.month, day=now.day, tzinfo=UTC) - timedelta(days=1)
+
+        # Smart lookback: use full history on first run, then only recent days
+        if not self._initial_fetch_done:
+            lookback_days = LOOKUP_DAYS
+            LOGGER.info(f"Initial data fetch for {self._attr_name}: retrieving {lookback_days} days of historical data")
+        else:
+            lookback_days = ONGOING_LOOKUP_DAYS
+            LOGGER.debug(f"Ongoing update for {self._attr_name}: checking last {lookback_days} days for new data")
 
         executor_results = []
 
         with ThreadPoolExecutor(max_workers=PARALLEL_DAYS) as executor:
-            current_date = yesterday - timedelta(days=LOOKUP_DAYS)
+            current_date = yesterday - timedelta(days=lookback_days)
             while current_date <= yesterday:
                 LOGGER.debug(f"Submitting {current_date}")
                 try:
@@ -101,6 +119,9 @@ class Sensor(PollUpdateMixin, HistoricalSensor, SensorEntity):
                 except Exception as err:
                     LOGGER.warning(f"Failed to submit job for {current_date}: {err}")
                 current_date += timedelta(days=1)
+        
+        # Mark update time
+        self._last_update_time = now
 
         LOGGER.info("Finished launching jobs")
 
@@ -164,6 +185,11 @@ class Sensor(PollUpdateMixin, HistoricalSensor, SensorEntity):
             
             # Update last successful data timestamp
             self._last_data_timestamp = max_dt
+            
+            # Mark initial fetch as complete
+            if not self._initial_fetch_done:
+                self._initial_fetch_done = True
+                LOGGER.info(f"Initial fetch complete for {self._attr_name}: {len(valid_datapoints)} datapoints from {min_dt} to {max_dt}")
             
             # Log with appropriate level based on data freshness
             if data_age_hours > 72:  # More than 3 days old
