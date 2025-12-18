@@ -294,54 +294,43 @@ class MeterInsightScraper:
                 LOGGER.warning(f"Failed to parse date {end_date_str}: {err}")
                 continue
 
-            # Process each tariff bucket
-            # The API may return data in multiple tariff buckets for the same hour
-            # We need to find which tariff bucket has the PRIMARY/active data
+            # Determine which tariff is active based on time of day
+            # Time ranges: Off Peak (Night) 23:00-08:00, On Peak (Peak) 17:00-19:00, Mid Peak (Day) 08:00-17:00 & 19:00-23:00
+            hour = end_dt.hour
             
-            # Strategy: When NOT filtering, take only the LAST non-zero tariff in the priority order
-            # This handles cases where multiple tariffs report the same consumption
-            # Priority order: flatRate > offPeak > midPeak > onPeak (most specific last)
+            # Determine the expected active tariff based on hour
+            if hour >= 23 or hour < 8:  # 23:00-07:59
+                expected_tariff = "offPeak"  # Night rate
+            elif 17 <= hour < 19:  # 17:00-18:59
+                expected_tariff = "onPeak"   # Peak rate
+            else:  # 08:00-16:59 and 19:00-22:59
+                expected_tariff = "midPeak"  # Day rate
             
-            active_tariff_data = None
-            active_tariff_key = None
+            # Process tariff buckets
+            # If filtering for a specific tariff, only get that one
+            # If not filtering, use the time-based expected tariff to avoid double-counting
             
-            for tariff_key in usage_tariff_keys:
-                usage_entry = dp.get(tariff_key)
-                
-                # Skip null/empty entries
-                if usage_entry is None:
-                    continue
-                
+            if tariff_type:
+                # Filtering mode: only get the requested tariff
+                target_tariff = tariff_type
+            else:
+                # Total mode: use the tariff that should be active at this hour
+                target_tariff = expected_tariff
+            
+            # Get the data for the target tariff
+            usage_entry = dp.get(target_tariff)
+            
+            if usage_entry is not None:
                 consumption = usage_entry.get("consumption")
                 cost = usage_entry.get("cost")
                 
-                # Skip if both consumption and cost are None or 0
-                if consumption in (None, 0) and cost in (None, 0):
-                    continue
-                
-                # If filtering for specific tariff, only process if it matches
-                if tariff_type:
-                    if tariff_key == tariff_type:
-                        # Found our filtered tariff, add it
-                        datapoints.append({
-                            "consumption": consumption,
-                            "cost"       : cost,
-                            "intervalEnd": interval_end,
-                            "tariff"     : tariff_key,
-                        })
-                        break  # Only one match possible when filtering
-                else:
-                    # Not filtering - keep track of the last valid tariff (highest priority)
-                    active_tariff_data = {
+                # Only add if there's actual data
+                if consumption not in (None, 0) or cost not in (None, 0):
+                    datapoints.append({
                         "consumption": consumption,
                         "cost"       : cost,
                         "intervalEnd": interval_end,
-                        "tariff"     : tariff_key,
-                    }
-                    active_tariff_key = tariff_key
-            
-            # Add the active tariff data when not filtering
-            if not tariff_type and active_tariff_data:
-                datapoints.append(active_tariff_data)
+                        "tariff"     : target_tariff,
+                    })
 
         return datapoints

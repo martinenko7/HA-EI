@@ -9,12 +9,10 @@ from homeassistant.helpers.typing import DiscoveryInfoType
 
 from .api import ElectricIrelandScraper
 from .const import (
-    TARIFF_TYPES,
-    TARIFF_NAMES,
-    TARIFF_FLAT_RATE,
     TARIFF_OFF_PEAK,
     TARIFF_MID_PEAK,
     TARIFF_ON_PEAK,
+    TARIFF_NAMES,
 )
 from .sensor_base import Sensor
 
@@ -41,8 +39,11 @@ async def async_setup_entry(
         CostSensor(device_id=config_entry.entry_id, ei_api=ei_api),
     ]
     
-    # Add tariff-specific sensors for each tariff type
-    for tariff_type in TARIFF_TYPES:
+    # Add tariff-specific sensors only for TOU (Time of Use) tariffs
+    # Skip flatRate as it's not used on TOU plans
+    tou_tariffs = [TARIFF_OFF_PEAK, TARIFF_MID_PEAK, TARIFF_ON_PEAK]
+    
+    for tariff_type in tou_tariffs:
         sensors.extend([
             ConsumptionSensor(
                 device_id=config_entry.entry_id,
