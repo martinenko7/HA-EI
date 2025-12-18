@@ -324,6 +324,10 @@ class MeterInsightScraper:
                 consumption = usage_entry.get("consumption")
                 cost = usage_entry.get("cost")
                 
+                # Debug logging to see what data we're getting
+                if tariff_type:
+                    LOGGER.debug(f"Hour {hour:02d}:00, filtering for {tariff_type}, got consumption={consumption}, cost={cost}")
+                
                 # Only add if there's actual data
                 if consumption not in (None, 0) or cost not in (None, 0):
                     datapoints.append({
@@ -332,5 +336,8 @@ class MeterInsightScraper:
                         "intervalEnd": interval_end,
                         "tariff"     : target_tariff,
                     })
+            elif tariff_type:
+                # Log when filtering but no data found
+                LOGGER.debug(f"Hour {hour:02d}:00, filtering for {tariff_type}, but no data in that bucket")
 
         return datapoints
