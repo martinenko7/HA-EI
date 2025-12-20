@@ -107,7 +107,7 @@ Every hour:
 
 ### Manual Installation
 
-1. Copy the `custom_components/electric_ireland_insights` folder to your Home Assistant `config/custom_components/` directory
+1. Copy the `custom_components/electric_ireland_smart_tariff` folder to your Home Assistant `config/custom_components/` directory
 2. Restart Home Assistant
 
 ### Configuration

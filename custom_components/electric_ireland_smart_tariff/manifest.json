@@ -1,0 +1,20 @@
+{
+  "domain": "electric_ireland_smart_tariff",
+  "name": "Electric Ireland Smart Tariff Insights",
+  "codeowners": ["@martinenko7"],
+  "config_flow": true,
+  "dependencies": [
+    "recorder"
+  ],
+  "documentation": "https://github.com/martinenko7/HA-EI",
+  "integration_type": "hub",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/martinenko7/HA-EI/issues",
+  "loggers": ["electric_ireland_smart_tariff"],
+  "requirements": [
+    "beautifulsoup4~=4.12.3",
+    "homeassistant-historical-sensor==2.0.0rc4",
+    "requests~=2.32.3"
+  ],
+  "version": "0.3.0"
+}
