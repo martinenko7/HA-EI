@@ -1,6 +1,7 @@
 {
   "domain": "electric_ireland_smart_tariff",
   "name": "Electric Ireland Smart Tariff Insights",
+  "brand": "electric_ireland",
   "codeowners": ["@martinenko7"],
   "config_flow": true,
   "dependencies": [
