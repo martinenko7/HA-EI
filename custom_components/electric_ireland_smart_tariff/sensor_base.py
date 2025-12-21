@@ -218,7 +218,7 @@ class Sensor(PollUpdateMixin, HistoricalSensor, SensorEntity):
     def statistic_id(self) -> str:
         return self.entity_id
 
-    def get_statistic_metadata(self) -> StatisticMetaData:
+        def get_statistic_metadata(self) -> StatisticMetaData:
         """
         Add sum and mean to base statistics metadata.
         Updated to comply with Home Assistant 2024.11+ requirements.
@@ -229,16 +229,15 @@ class Sensor(PollUpdateMixin, HistoricalSensor, SensorEntity):
         meta["has_sum"] = True
         
         # FIX: Replace deprecated 'has_mean' with explicit 'mean_type'
-        # This resolves the MissingIntegrationFrame/RuntimeError
         meta["mean_type"] = StatisticMeanType.ARITHMETIC
         
-        # Set unit_class based on device_class for proper statistics handling
+        # Set unit_class ONLY for energy. 
+        # For MONETARY, we leave it out to avoid the "Unsupported unit_class" error.
         if self._attr_device_class == SensorDeviceClass.ENERGY:
             meta["unit_class"] = "energy"
-        elif self._attr_device_class == SensorDeviceClass.MONETARY:
-            meta["unit_class"] = "monetary"
 
         return meta
+
 
     async def async_calculate_statistic_data(
             self, hist_states: list[HistoricalState], *, latest: dict | None = None
