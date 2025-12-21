@@ -6,7 +6,12 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, UTC
 from typing import List
 
-from homeassistant.components.recorder.models import StatisticData, StatisticMetaData
+from homeassistant.components.recorder.models import (
+    StatisticData, 
+    StatisticMetaData, 
+    StatisticMeanType
+)
+
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 
 from homeassistant_historical_sensor import (
@@ -214,26 +219,28 @@ class Sensor(PollUpdateMixin, HistoricalSensor, SensorEntity):
     def statistic_id(self) -> str:
         return self.entity_id
 
-    def get_statistic_metadata(self) -> StatisticMetaData:
-        #
-        # Add sum and mean to base statistics metadata
-        # Important: HistoricalSensor.get_statistic_metadata returns an
-        # internal source by default.
-        #
+        def get_statistic_metadata(self) -> StatisticMetaData:
+        """
+        Add sum and mean to base statistics metadata.
+        Updated to comply with Home Assistant 2024.11+ requirements.
+        """
         meta = super().get_statistic_metadata()
+        
+        # 'has_sum' remains required for historical energy/cost tracking
         meta["has_sum"] = True
-        meta["has_mean"] = True
-        # Note: mean_type is NOT set for TOTAL state_class sensors
-        # HistoricalSensor handles statistics internally, and Home Assistant
-        # will calculate mean from the imported sum values automatically
+        
+        # FIX: Replace deprecated 'has_mean' with explicit 'mean_type'
+        # This resolves the MissingIntegrationFrame/RuntimeError
+        meta["mean_type"] = StatisticMeanType.ARITHMETIC
         
         # Set unit_class based on device_class for proper statistics handling
         if self._attr_device_class == SensorDeviceClass.ENERGY:
             meta["unit_class"] = "energy"
-        # For monetary sensors, don't set unit_class - let it be inferred from unit_of_measurement
-        # This allows EUR/USD/etc to work properly
+        elif self._attr_device_class == SensorDeviceClass.MONETARY:
+            meta["unit_class"] = "monetary"
 
         return meta
+
 
     async def async_calculate_statistic_data(
             self, hist_states: list[HistoricalState], *, latest: dict | None = None
