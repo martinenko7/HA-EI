@@ -219,7 +219,7 @@ class Sensor(PollUpdateMixin, HistoricalSensor, SensorEntity):
     def statistic_id(self) -> str:
         return self.entity_id
 
-            def get_statistic_metadata(self) -> StatisticMetaData:
+                def get_statistic_metadata(self) -> StatisticMetaData:
         """
         Add sum and mean to base statistics metadata.
         Updated to comply with Home Assistant 2024.11+ requirements.
@@ -240,6 +240,7 @@ class Sensor(PollUpdateMixin, HistoricalSensor, SensorEntity):
             meta["unit_class"] = "monetary"
 
         return meta
+
 
 
     async def async_calculate_statistic_data(
