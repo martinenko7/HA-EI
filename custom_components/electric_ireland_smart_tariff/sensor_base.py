@@ -53,6 +53,12 @@ class Sensor(PollUpdateMixin, HistoricalSensor, SensorEntity):
         self._last_update_time = None
         self._initial_fetch_done = False
 
+    def _friendly_name_internal(self):
+        """Backwards compatibility patch for homeassistant-historical-sensor."""
+        # This fixes the crash in HA 2026.2 where the library tries to call 
+        # a private method that was removed from Home Assistant Core.
+        return self.name
+
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
 
