@@ -260,6 +260,11 @@ class MeterInsightScraper:
             LOGGER.error(f"Expected JSON but got {content_type}. Response: {response.text[:500]}")
             return []
 
+        # NEW: Handle empty response body gracefully to avoid JSON parse errors
+        if not response.text.strip():
+            LOGGER.debug(f"API returned empty response for {date_str}. Data likely not available yet.")
+            return []
+
         try:
             data = response.json()
         except Exception as err:
